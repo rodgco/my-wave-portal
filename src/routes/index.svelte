@@ -15,10 +15,6 @@
 
 	let value: string = '';
 
-	$: console.log('Connected', currentAccount);
-	$: console.log('Ethereum', ethereum);
-	$: console.log('Provider', provider);
-
 	onMount(async () => {
 		/*
 		 * First make sure we have access to window.ethereum
@@ -26,12 +22,7 @@
 		try {
 			({ ethereum } = window);
 
-			if (!ethereum) {
-				console.log('Make sure you have metamask!');
-				return;
-			} else {
-				console.log('We have the ethereum object', ethereum);
-			}
+			if (!ethereum) return;
 
 			provider = new ethers.providers.Web3Provider(ethereum);
 			const wavePortalContract = new ethers.Contract(contractAddress, abi, provider);
@@ -40,8 +31,6 @@
 			waves = await wavePortalContract.getAllWaves();
 
 			wavePortalContract.on('NewWave', (waver, timestamp, message, winner, newTotal) => {
-				console.log('NewWave', waver, timestamp, message, winner, newTotal);
-
 				totalWaves = newTotal;
 
 				waves = [
@@ -149,7 +138,7 @@
 			{/if}
 
 			<ul id="waves">
-				{#each waves as wave}
+				{#each [...waves].reverse() as wave}
 					<li>
 						<div class="message">{wave.message} {@html wave.winner ? '&#x1F3C6;' : ''}</div>
 						<div class="meta">{formatAddress(wave.waver)} - {formatTimeStamp(wave.timestamp)}</div>
