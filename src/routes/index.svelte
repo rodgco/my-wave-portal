@@ -4,6 +4,8 @@
 	import { abi } from '$lib/WavePortal.json';
 	import type { AbiCoder } from 'ethers/lib/utils';
 
+	const contractAddress = <string>import.meta.env.VITE_CONTRACT_ADDRESS;
+
 	let ethereum: providers.ExternalProvider;
 	let provider: providers.Web3Provider;
 	let currentAccount: AbiCoder;
@@ -12,8 +14,6 @@
 	let waves: any[] = [];
 
 	let value: string = '';
-
-	const contractAddress = <string>import.meta.env.VITE_CONTRACT_ADDRESS;
 
 	$: console.log('Connected', currentAccount);
 	$: console.log('Ethereum', ethereum);
@@ -34,9 +34,27 @@
 			}
 
 			provider = new ethers.providers.Web3Provider(ethereum);
-			totalWaves = await getTotalWaves();
-			waves = await getAllWaves();
-			console.log('Waves', waves);
+			const wavePortalContract = new ethers.Contract(contractAddress, abi, provider);
+
+			totalWaves = await wavePortalContract.getTotalWaves();
+			waves = await wavePortalContract.getAllWaves();
+
+			wavePortalContract.on('NewWave', (waver, timestamp, message, winner, newTotal) => {
+				console.log('NewWave', waver, timestamp, message, winner, newTotal);
+
+				totalWaves = newTotal;
+
+				waves = [
+					...waves,
+					{
+						waver,
+						timestamp,
+						message,
+						winner
+					}
+				];
+			});
+
 			/*
 			 * Check if we're authorized to access the user's wallet
 			 */
@@ -67,55 +85,6 @@
 		} catch (error) {
 			console.log(error);
 		}
-	}
-
-	async function getTotalWaves(): Promise<number> {
-		try {
-			if (ethereum) {
-				const wavePortalContract = new ethers.Contract(contractAddress, abi, provider);
-
-				let count = await wavePortalContract.getTotalWaves();
-				return count.toNumber();
-			} else {
-				console.log("Ethereum object doesn't exist!");
-			}
-		} catch (error) {
-			console.log(error);
-		}
-		return undefined;
-	}
-
-	async function getAllWaves(): Promise<any[]> {
-		try {
-			if (ethereum) {
-				const wavePortalContract = new ethers.Contract(contractAddress, abi, provider);
-
-				/**
-				 * Listen in for emitter events!
-				 */
-				wavePortalContract.on('NewWave', (waver, timestamp, message, winner, newTotal) => {
-					console.log('NewWave', waver, timestamp, message, winner, newTotal);
-
-					totalWaves = newTotal;
-
-					waves = [
-						...waves,
-						{
-							waver,
-							timestamp,
-							message,
-							winner
-						}
-					];
-				});
-				return await wavePortalContract.getAllWaves();
-			} else {
-				console.log("Ethereum object doesn't exist!");
-			}
-		} catch (error) {
-			console.log('---', error);
-		}
-		return undefined;
 	}
 
 	async function wave() {
@@ -171,9 +140,9 @@
 			<div class="bio">Total waves: {totalWaves}</div>
 
 			{#if currentAccount}
-				<form>
+				<form on:submit|preventDefault={wave}>
 					<input type="text" placeholder="message" bind:value />
-					<button type="submit" class="waveButton" on:click={wave}>Wave at Me</button>
+					<button type="submit" class="waveButton">Wave at Me</button>
 				</form>
 			{:else}
 				<button class="waveButton" on:click={connectWallet}>Connect Wallet</button>
