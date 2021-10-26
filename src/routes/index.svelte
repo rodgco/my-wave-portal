@@ -1,56 +1,36 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { ethers, providers } from 'ethers';
-	import { abi } from '$lib/WavePortal.json';
-	import type { AbiCoder } from 'ethers/lib/utils';
-
+	import waveStore from '$lib/WavesStore';
+	import type { EthereumWindow, Wave, WaveStore } from '../global';
 	const contractAddress = <string>import.meta.env.VITE_CONTRACT_ADDRESS;
 
 	let ethereum: providers.ExternalProvider;
 	let provider: providers.Web3Provider;
-	let currentAccount: AbiCoder;
 
-	let totalWaves: number;
-	let waves: any[] = [];
+	let connected: boolean = false;
 
 	let value: string = '';
+
+	let waves: WaveStore<Wave[]>;
 
 	onMount(async () => {
 		/*
 		 * First make sure we have access to window.ethereum
 		 */
 		try {
-			({ ethereum } = window);
-
+			({ ethereum } = <EthereumWindow>(<unknown>window));
 			if (!ethereum) return;
 
 			provider = new ethers.providers.Web3Provider(ethereum);
-			const wavePortalContract = new ethers.Contract(contractAddress, abi, provider);
-
-			totalWaves = await wavePortalContract.getTotalWaves();
-			waves = await wavePortalContract.getAllWaves();
-
-			wavePortalContract.on('NewWave', (waver, timestamp, message, winner, newTotal) => {
-				totalWaves = newTotal;
-
-				waves = [
-					...waves,
-					{
-						waver,
-						timestamp,
-						message,
-						winner
-					}
-				];
-			});
+			waves = waveStore(provider, contractAddress);
 
 			/*
 			 * Check if we're authorized to access the user's wallet
 			 */
 			const accounts = await ethereum.request({ method: 'eth_accounts' });
-
 			if (accounts.length !== 0) {
-				currentAccount = accounts[0];
+				connected = true;
 			} else {
 				console.log('No authorized account found');
 			}
@@ -59,18 +39,12 @@
 		}
 	});
 
-	/**
-	 * Implement your connectWallet method here
-	 */
 	async function connectWallet() {
 		try {
-			if (!ethereum) {
-				alert('Get MetaMask!');
-				return;
-			}
+			if (!ethereum) return;
 
-			const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-			currentAccount = accounts[0];
+			await ethereum.request({ method: 'eth_requestAccounts' });
+			connected = true;
 		} catch (error) {
 			console.log(error);
 		}
@@ -80,18 +54,11 @@
 		try {
 			if (ethereum) {
 				const signer = provider.getSigner();
-				const wavePortalContract = new ethers.Contract(contractAddress, abi, signer);
-
-				let count = await wavePortalContract.getTotalWaves();
-				console.log('Retrieved total wave count...', count.toNumber());
 
 				/*
-				 * Execute the actual wave from your smart contract
+				 * Execute the actual wave from your smart contract using the store
 				 */
-				const waveTxn = await wavePortalContract.wave(value, { gasLimit: 300_000 });
-				console.log('Mining...', waveTxn.hash);
-				await waveTxn.wait();
-				console.log('Mined...', waveTxn.hash);
+				waves.wave(signer, value);
 				value = '';
 			} else {
 				console.log("Ethereum object doesn't exist!");
@@ -126,9 +93,9 @@
 				must be connected to the Rinkeby test network.
 			</div>
 		{:else}
-			<div class="bio">Total waves: {totalWaves}</div>
+			<div class="bio">Total waves: {$waves.length}</div>
 
-			{#if currentAccount}
+			{#if connected}
 				<form on:submit|preventDefault={wave}>
 					<input type="text" placeholder="message" bind:value />
 					<button type="submit" class="waveButton">Wave at Me</button>
@@ -138,7 +105,7 @@
 			{/if}
 
 			<ul id="waves">
-				{#each [...waves].reverse() as wave}
+				{#each [...$waves].reverse() as wave}
 					<li>
 						<div class="message">{wave.message} {@html wave.winner ? '&#x1F3C6;' : ''}</div>
 						<div class="meta">{formatAddress(wave.waver)} - {formatTimeStamp(wave.timestamp)}</div>
